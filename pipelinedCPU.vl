@@ -1,0 +1,824 @@
+`timescale 1ns / 1ns
+module MUX2_1(select,in0,in1,out);
+    input select;
+    input [31:0] in0,in1;
+    output reg [31:0] out;
+    
+    always
+    @(*)
+        case(select)
+            0: out=in0;
+            1: out=in1;
+            default: out=in0;
+        endcase    
+endmodule
+
+module MUX4_1(select,in0,in1,in2,in3,out);
+    input [1:0] select;
+    input [31:0] in0,in1,in2,in3;
+    output reg [31:0] out;
+    
+    always
+    @(*)
+        case(select)
+            0: out=in0;
+            1: out=in1;
+            2: out=in2;
+            3: out=in3;
+        endcase    
+endmodule
+
+module PC(clk,en,D,Q);
+    input clk,en;
+    input [31:0] D;
+    reg [31:0] pc;
+    output [31:0] Q;
+    
+    assign Q=pc;
+    
+    initial
+        pc=0;
+        
+    always
+    @(posedge clk)
+        if(en==1)
+            pc=D;    
+endmodule
+
+module IM(addr,instr);
+    input [31:0] addr;
+    output [31:0] instr;
+    reg [7:0] instr_mem[0:1023];
+    
+    initial  //在存储器中放入指令，对CPU进行测试
+        begin
+            /*测试指令序列1
+            instr_mem[3]=8'b10001100; //LW R0,Imm16(R1) (R1)=0,Imm16=0,data_mem[0]=10,执行完之后(R0)=10 8C200000
+            instr_mem[2]=8'b00100000;
+            instr_mem[1]=8'b00000000;
+            instr_mem[0]=8'b00000000;
+            
+            instr_mem[7]=8'b00000000; //ADD R1,R1,R0 执行完之后(R1)=10 00010820
+            instr_mem[6]=8'b00000001;
+            instr_mem[5]=8'b00001000;
+            instr_mem[4]=8'b00100000;
+            
+            instr_mem[11]=8'b00000000; //ADD R1,R1,R0
+            instr_mem[10]=8'b00000001;
+            instr_mem[9]=8'b00001000;
+            instr_mem[8]=8'b00100000;
+            
+            instr_mem[15]=8'b00000000; //SUB R1,R0,R1 00200822
+            instr_mem[14]=8'b00100000;
+            instr_mem[13]=8'b00001000;
+            instr_mem[12]=8'b00100010;
+            */
+            /*
+            instr_mem[3]=8'b00010000; //BEQ R2,R3,Addr16 10430004
+            instr_mem[2]=8'b01000011;
+            instr_mem[1]=8'b00000000;
+            instr_mem[0]=8'b00000100;
+            */
+            instr_mem[3]=8'b00010000; //BEQ R2,R4,Addr16(R2!=R4) 10440004
+            instr_mem[2]=8'b01000100;
+            instr_mem[1]=8'b00000000;
+            instr_mem[0]=8'b00000100;
+            
+            instr_mem[7]=8'b00000000; //ADD R1,R1,R0 00010820
+            instr_mem[6]=8'b00000001;
+            instr_mem[5]=8'b00001000;
+            instr_mem[4]=8'b00100000;
+            
+            instr_mem[11]=8'b00000000; //ADD R1,R0,R1 00200820
+            instr_mem[10]=8'b00100000;
+            instr_mem[9]=8'b00001000;
+            instr_mem[8]=8'b00100000;
+            
+            instr_mem[15]=8'b00000000; //ADD R1,R1,R0
+            instr_mem[14]=8'b00000001;
+            instr_mem[13]=8'b00001000;
+            instr_mem[12]=8'b00100000;
+            
+            instr_mem[19]=8'b00000000; //ADD R1,R1,R0
+            instr_mem[18]=8'b00100000;
+            instr_mem[17]=8'b00001000;
+            instr_mem[16]=8'b00100000;
+            
+            instr_mem[23]=8'b00000000; //ADD R6,R6,R7
+            instr_mem[22]=8'b11000111;
+            instr_mem[21]=8'b00110000;
+            instr_mem[20]=8'b00100000;
+                    
+            /*
+            instr_mem[19]=8'b10101100; //SW R1,Imm16(R5) (R5)=16,Imm16=0,执行完之后data_mem[16]=10 ACA10000
+            instr_mem[18]=8'b10100001;
+            instr_mem[17]=8'b00000000;
+            instr_mem[16]=8'b00000000;*/
+        end
+    
+    assign #1 instr={instr_mem[addr+3],instr_mem[addr+2],instr_mem[addr+1],instr_mem[addr]};
+endmodule
+
+module FI_ID(FI_ID_RegWr,predict_fail,clk,npc1,ir,NPC1,IR);
+    input FI_ID_RegWr,predict_fail,clk;
+    input [31:0] npc1,ir;
+    reg [31:0] fi_id_npc1,fi_id_ir;
+    output reg [31:0] NPC1,IR; 
+    
+    initial
+        begin
+            NPC1=0;
+            fi_id_npc1=0;
+            //fi_id_ir=0;
+        end
+    
+    always
+    @(posedge clk)
+        if(FI_ID_RegWr==1)
+            begin
+                fi_id_npc1=npc1;
+                fi_id_ir=ir;
+            end
+        else if(predict_fail==1)
+            begin
+                fi_id_npc1='bx;
+                fi_id_ir='bx;
+            end
+    always
+    @(*)
+        begin
+            NPC1=fi_id_npc1;
+            IR=fi_id_ir;
+        end
+endmodule
+
+module RF(clk,R_Reg1,R_Reg2,W_Reg,W_data,R_data1,R_data2,RegWr);
+    input [4:0] R_Reg1,R_Reg2,W_Reg;
+    input clk,RegWr;
+    output [31:0] R_data1,R_data2,W_data;
+    reg [31:0] regs[0:31];
+    
+    assign R_data1=regs[R_Reg1];
+    assign R_data2=regs[R_Reg2];
+    
+    initial
+        begin
+            regs[0]=9;
+            regs[1]=0;
+            regs[2]=2;
+            regs[3]=2;
+            regs[4]=3;
+            regs[5]=16;
+            regs[6]=1;
+            regs[7]=2;
+        end
+    
+    always
+    @(posedge clk)
+        if(RegWr)
+            regs[W_Reg]=W_data;
+            
+    initial
+        $monitor("time:%t",$time," R0:%d,R1:%d,R6:%d,R7:%d",regs[0],regs[1],regs[6],regs[7]);
+endmodule
+
+module ID_EX_CU(clk,aluop,memrd,memwr,branch,jump,regdst,regwr,memtoreg,ALUOp,MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg);
+    input clk;
+    input memrd,memwr,branch,jump,regdst,regwr,memtoreg;
+    input [1:0] aluop;
+    reg id_ex_memrd,id_ex_memwr,id_ex_branch,id_ex_jump,id_ex_regdst,id_ex_regwr,id_ex_memtoreg;
+    reg [1:0] id_ex_aluop;
+    output reg MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg;
+    output reg [1:0] ALUOp;
+    
+    initial
+        begin
+            id_ex_aluop=0;
+            id_ex_memrd=0;
+            id_ex_memwr=0;
+            id_ex_branch=0;
+            id_ex_jump=0;
+            id_ex_regdst=0;
+            id_ex_regwr=0;
+            id_ex_memtoreg=0;
+        end
+        
+    always
+    @(posedge clk)
+        begin
+            id_ex_aluop=aluop;
+            id_ex_memrd=memrd;
+            id_ex_memwr=memwr;
+            id_ex_branch=branch;
+            id_ex_jump=jump;
+            id_ex_regdst=regdst;
+            id_ex_regwr=regwr;
+            id_ex_memtoreg=memtoreg;
+        end
+    always
+    @(*)
+        begin
+            ALUOp=id_ex_aluop;
+            MemRd=id_ex_memrd;
+            MemWr=id_ex_memwr;
+            Branch=id_ex_branch;
+            Jump=id_ex_jump;
+            RegDst=id_ex_regdst;
+            RegWr=id_ex_regwr;
+            MemtoReg=id_ex_memtoreg;
+        end
+endmodule
+    
+module ID_EX(clk,npc1,rs,rt,imm32,ir,NPC1,Rs,Rt,Imm32,IR);
+    input clk;
+    input [31:0] rs,rt,npc1,imm32,ir;
+    reg [31:0] id_ex_rs,id_ex_rt,id_ex_npc1,id_ex_imm32,id_ex_ir;
+    output reg [31:0] Rs,Rt,NPC1,Imm32,IR;
+    
+    initial
+        begin
+            NPC1=0;
+            id_ex_npc1=0;
+            Rs=0;
+            id_ex_rs=0;
+            Rt=0;
+            id_ex_rt=0;
+            Imm32=0;
+            id_ex_imm32=0;
+            //IR=0;
+            //id_ex_ir=0;
+        end
+    
+    always
+    @(posedge clk)
+        begin
+            id_ex_npc1=npc1;
+            id_ex_rs=rs;
+            id_ex_rt=rt;
+            id_ex_imm32=imm32;
+            id_ex_ir=ir;
+        end
+    
+    always
+    @(*)
+        begin
+            NPC1=id_ex_npc1;
+            Rs=id_ex_rs;
+            Rt=id_ex_rt;
+            Imm32=id_ex_imm32;
+            IR=id_ex_ir;
+        end
+endmodule
+
+module SHL2_1(in,out);
+    input [31:0] in;
+    output [31:0] out;
+    
+    assign out={in[29:0],2'b00};  
+endmodule
+
+module SHL2_2(in,out);
+    input [25:0] in;
+    output [27:0] out;
+    
+    assign out={in,2'b00};  
+endmodule
+
+module SigExt(inst15_0,out);
+    input [15:0] inst15_0;
+    output [31:0] out;
+    
+    assign out={{16{inst15_0[15]}},inst15_0};  
+endmodule
+
+module Adder(A,B,C);
+    input [31:0] A,B;
+    output [31:0] C;
+
+    assign #1 C=A+B;
+endmodule
+
+module ALU(A,B,M,Z,C);
+    input [31:0] A,B;
+    input [2:0] M;  //ALUCtrl
+    output reg Z;
+    output reg [31:0] C;
+    
+    initial
+        C=0;
+    
+    always
+    @(M or A or B)
+        begin
+            case(M)
+                3'b100: C=A+B; //ADD判溢出
+                3'b101: C=A+B; //ADDU
+                3'b110: C=A-B; //SUB判溢出
+                3'b000: C=A&B; //AND
+                3'b001: C=A|B; //OR
+                3'b011: C=A<B?1:0;//SLT
+            endcase
+            if(C==0) Z=1;
+            else Z=0;
+        end
+endmodule
+
+module ALUcontrol(inst5_0,ALUOp,ALUCtrl);
+    input [5:0] inst5_0;
+    input [1:0] ALUOp;
+    output reg [2:0] ALUCtrl;
+    
+    initial
+        ALUCtrl=3'b100;
+    
+    always
+    @(inst5_0 or ALUOp)
+        begin
+            if(ALUOp==2'b00) ALUCtrl=3'b100;
+            if(ALUOp==2'b01) ALUCtrl=3'b110;
+            if(ALUOp==2'b10) 
+                case(inst5_0)
+                    6'b100000: ALUCtrl=3'b100;
+                    6'b100001: ALUCtrl=3'b101;
+                    6'b100010: ALUCtrl=3'b110;
+                    6'b100100: ALUCtrl=3'b000;
+                    6'b100101: ALUCtrl=3'b001;
+                    6'b101010: ALUCtrl=3'b011;
+                endcase
+        end    
+endmodule
+
+module EX_MA_CU(clk,memrd,memwr,branch,jump,regdst,regwr,memtoreg,MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg);
+    input clk;
+    input memrd,memwr,branch,jump,regdst,regwr,memtoreg;
+    reg ex_ma_memrd,ex_ma_memwr,ex_ma_branch,ex_ma_jump,ex_ma_regdst,ex_ma_regwr,ex_ma_memtoreg;
+    output reg MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg;
+    
+    initial
+        begin
+            ex_ma_memrd=0;
+            ex_ma_memwr=0;
+            ex_ma_branch=0;
+            ex_ma_jump=0;
+            ex_ma_regdst=0;
+            ex_ma_regwr=0;
+            ex_ma_memtoreg=0;
+        end
+    
+    always
+    @(posedge clk)
+        begin
+            ex_ma_memrd=memrd;
+            ex_ma_memwr=memwr;
+            ex_ma_branch=branch;
+            ex_ma_jump=jump;
+            ex_ma_regdst=regdst;
+            ex_ma_regwr=regwr;
+            ex_ma_memtoreg=memtoreg;
+        end
+
+    always
+    @(*)
+        begin
+            MemRd=ex_ma_memrd;
+            MemWr=ex_ma_memwr;
+            Branch=ex_ma_branch;
+            Jump=ex_ma_jump;
+            RegDst=ex_ma_regdst;
+            RegWr=ex_ma_regwr;
+            MemtoReg=ex_ma_memtoreg;
+        end
+endmodule
+
+module EX_MA(clk,npc3,npc2,flag,aluout,rt,ir,NPC3,NPC2,Flag,ALUOut,Rt,IR);
+    input clk,flag;
+    input [31:0] rt,npc3,npc2,aluout,ir;
+    reg ex_ma_flag;
+    reg [31:0] ex_ma_rt,ex_ma_npc3,ex_ma_npc2,ex_ma_aluout,ex_ma_ir;
+    output reg Flag;
+    output reg [31:0] Rt,NPC3,NPC2,ALUOut,IR;
+    
+    initial
+        begin
+            NPC3=0;
+            ex_ma_npc3=0;
+            NPC2=0;
+            ex_ma_npc2=0;
+            Flag=0;
+            ex_ma_flag=0;
+            ALUOut=0;
+            ex_ma_aluout=0;
+            Rt=0;
+            ex_ma_rt=0;
+            //IR=0;
+            //ex_ma_ir=0;
+        end
+    
+    always
+    @(posedge clk)
+        begin
+            ex_ma_npc3=npc3;
+            ex_ma_npc2=npc2;
+            ex_ma_flag=flag;
+            ex_ma_aluout=aluout;
+            ex_ma_rt=rt;
+            ex_ma_ir=ir;
+        end
+    
+    always
+    @(*)
+        begin
+            NPC3=ex_ma_npc3;
+            NPC2=ex_ma_npc2;
+            Flag=ex_ma_flag;
+            ALUOut=ex_ma_aluout;
+            Rt=ex_ma_rt;
+            IR=ex_ma_ir;
+        end
+endmodule
+
+module DM(clk,addr,R_data,W_data,W,R);
+    input [31:0] addr,W_data;
+    input clk,W,R;
+    output reg [31:0] R_data;
+    reg [7:0] data_mem[0:1023]; //存储器按字节编址
+    
+    initial
+        begin
+            data_mem[0]=10;
+            data_mem[1]=0;
+            data_mem[2]=0;
+            data_mem[3]=0;
+        end
+        
+    always
+    @(posedge clk)
+        if(W)
+            begin
+                data_mem[addr]=W_data[7:0];
+                data_mem[addr+1]=W_data[15:8];
+                data_mem[addr+2]=W_data[23:16];
+                data_mem[addr+3]=W_data[31:24];
+            end
+        
+    always
+    @(*)
+        if(R) R_data={data_mem[addr+3],data_mem[addr+2],data_mem[addr+1],data_mem[addr]}; 
+endmodule
+
+module MA_WB_CU(clk,regdst,regwr,memtoreg,RegDst,RegWr,MemtoReg);
+    input clk;
+    input regdst,regwr,memtoreg;
+    reg ma_wb_regdst,ma_wb_regwr,ma_wb_memtoreg;
+    output reg RegDst,RegWr,MemtoReg;
+    
+    initial
+        begin
+            ma_wb_regdst=0;
+            ma_wb_regwr=0;
+            ma_wb_memtoreg=0;
+        end
+    
+    always
+    @(posedge clk)
+        begin
+            ma_wb_regdst=regdst;
+            ma_wb_regwr=regwr;
+            ma_wb_memtoreg=memtoreg;
+        end
+    always
+    @(*)
+        begin
+            RegDst=ma_wb_regdst;
+            RegWr=ma_wb_regwr;
+            MemtoReg=ma_wb_memtoreg;
+        end
+endmodule
+
+module MA_WB(clk,aluout,memout,ir,ALUOut,MEMOut,IR);
+    input clk;
+    input [31:0] aluout,memout,ir;
+    reg [31:0] ma_wb_aluout,ma_wb_memout,ma_wb_ir;
+    output reg [31:0] ALUOut,MEMOut,IR;
+    
+    initial
+        begin
+            ALUOut=0;
+            ma_wb_aluout=0;
+            MEMOut=0;
+            ma_wb_memout=0;
+        end
+    
+    always
+    @(posedge clk)
+        begin
+            ma_wb_aluout=aluout;
+            ma_wb_memout=memout;
+            ma_wb_ir=ir;
+        end
+    
+    always
+    @(*)
+        begin
+            ALUOut=ma_wb_aluout;
+            MEMOut=ma_wb_memout;
+            IR=ma_wb_ir;
+        end
+endmodule
+
+module MCU(clk,IR,ALUOp,MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg);
+    input clk;
+    input [31:0] IR;
+    output [1:0] ALUOp;
+    output MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg;
+    reg [8:0] controls;
+    
+    assign {ALUOp,Jump,Branch,MemRd,MemWr,RegDst,RegWr,MemtoReg}=controls;
+    
+    always
+    @(posedge clk)
+        case(IR[31:26])
+            6'b000000: controls=9'b100000110;  //R-type
+            6'b100011: controls=9'b000010011;  //LW
+            6'b101011: controls=9'b000001x0x;  //SW
+            6'b000010: controls=9'bxx1000x0x;  //J
+            6'b000100: controls=9'b010100x0x;  //BEQ
+            default:   controls=9'bxxxxxxxxx;
+        endcase                        
+endmodule
+
+module bypass_CU(clk,ID_EX_IR,EX_MA_IR,MA_WB_IR,EX_MA_RegWr,EX_MA_MemtoReg,EX_MA_MemWr,MA_WB_RegWr,ID_EX_MemWr,ALUSrc_A,ALUSrc_B,MemSrc,A0);
+    input clk;
+    input [31:0] ID_EX_IR,EX_MA_IR,MA_WB_IR;
+    input EX_MA_RegWr,EX_MA_MemWr,EX_MA_MemtoReg,MA_WB_RegWr,ID_EX_MemWr;
+    output reg MemSrc;
+    output reg [1:0] ALUSrc_A,ALUSrc_B;
+    output A0;
+    reg A0,A1,B0,B1;
+    reg [1:0] A,B;
+    
+    initial
+        begin
+            case(ID_EX_IR[31:26])
+                6'b000000:  //R-type
+                    begin
+                        ALUSrc_A=2'b00;
+                        ALUSrc_B=2'b00;
+                    end
+                6'b100011:  //LW
+                    begin
+                        ALUSrc_A=2'b00;
+                        ALUSrc_B=2'b11;
+                    end
+                6'b101011:  //SW
+                    begin
+                        ALUSrc_A=2'b00;
+                        ALUSrc_B=2'b11;
+                    end
+                6'b000100:  //BEQ
+                    begin
+                        ALUSrc_A=2'b00;
+                        ALUSrc_B=2'b00;
+                    end
+            endcase
+        end
+    
+    always
+    @(*)
+        begin
+            A0=EX_MA_RegWr & (~EX_MA_MemtoReg) & (EX_MA_IR[15:11]==ID_EX_IR[25:21]);
+            B0=EX_MA_RegWr & (~EX_MA_MemtoReg) & (EX_MA_IR[15:11]==ID_EX_IR[20:16]);
+            A1=MA_WB_RegWr & (~ID_EX_MemWr) & (MA_WB_IR[20:16]==ID_EX_IR[25:21]);
+            B1=MA_WB_RegWr & (~ID_EX_MemWr) & (MA_WB_IR[20:16]==ID_EX_IR[20:16]);
+            A={A1,A0};
+            B={B1,B0};
+            MemSrc=MA_WB_RegWr & EX_MA_MemWr & (MA_WB_IR[20:16]==EX_MA_IR[20:16]);
+        end
+        
+    always
+    @(*)
+        begin
+            case(A)
+                2'b00: ALUSrc_A=2'b00;
+                2'b10: 
+                    begin
+                        if(B==2'b01) ALUSrc_A=2'b00;
+                        else ALUSrc_A=2'b10;
+                    end
+                2'b01,
+                2'b11: ALUSrc_A=2'b01;
+                default: ALUSrc_A=2'b00;
+            endcase
+        end
+        
+    always
+    @(*)
+        begin
+            case(B)
+                2'b10: 
+                    begin
+                        if(A!=2'b01) ALUSrc_B=2'b10;
+                        else
+                            case(ID_EX_IR[31:26])
+                                6'b000000: ALUSrc_B=2'b00;  //R-type        
+                                6'b100011: ALUSrc_B=2'b11;  //LW
+                                6'b101011: ALUSrc_B=2'b11;  //SW
+                                6'b000100: ALUSrc_B=2'b00;  //BEQ
+                            endcase
+                    end
+                2'b01,
+                2'b11: ALUSrc_B=2'b01;
+                default:
+                    case(ID_EX_IR[31:26])
+                        6'b000000: ALUSrc_B=2'b00;  //R-type        
+                        6'b100011: ALUSrc_B=2'b11;  //LW
+                        6'b101011: ALUSrc_B=2'b11;  //SW
+                        6'b000100: ALUSrc_B=2'b00;  //BEQ
+                    endcase
+            endcase
+        end
+endmodule
+
+module hazzard_detect_CU(clk,A0,ID_EX_MemRd,ID_EX_Jump,EX_MA_Branch,FI_ID_IR_Rs,FI_ID_IR_Rt,ID_EX_IR_Rt,EX_MA_Flag_ZF,PCWr,FI_ID_RegWr,Clear0,Clear1,predict_fail);
+    input clk,A0;
+    input ID_EX_MemRd,ID_EX_Jump,EX_MA_Branch,EX_MA_Flag_ZF;
+    input [4:0] FI_ID_IR_Rs,FI_ID_IR_Rt,ID_EX_IR_Rt;
+    output reg predict_fail;
+    reg load_use;
+    reg [3:0] hcu_controls;
+    output PCWr,FI_ID_RegWr,Clear0,Clear1;
+    
+    assign {PCWr,FI_ID_RegWr,Clear0,Clear1}=hcu_controls;
+    
+    initial
+        hcu_controls=4'b1100;
+    
+    //load-use的检测与阻塞
+    always
+    @(*)
+        load_use=ID_EX_MemRd & ((ID_EX_IR_Rt==FI_ID_IR_Rs) | (ID_EX_IR_Rt==FI_ID_IR_Rt));
+        
+    always
+    @(*)
+        begin
+            if(load_use==1)
+                case(A0)
+                    1: hcu_controls=4'b1100;
+                    default: hcu_controls=4'b0010;
+                endcase
+            else hcu_controls=4'b1100;
+        end
+    
+    //无条件转移检测与阻塞
+    always
+    @(*)
+        begin
+            if(ID_EX_Jump==1) 
+                begin
+                    hcu_controls[1]=1;
+                    #30;//三个时钟周期
+                    hcu_controls[1]=0;
+                end
+        end
+                    
+        
+    //预测失败检测与清除
+    always
+    @(*)
+        predict_fail=(EX_MA_Branch) & (EX_MA_Flag_ZF==1);
+        
+    always
+    @(*)
+        begin
+            if(predict_fail==1) 
+                begin
+                    hcu_controls=4'b1011;
+                    //#10 hcu_controls=4'b1111;
+                end
+            else hcu_controls=4'b1100;
+        end
+endmodule
+
+module pipelinedCPU;
+    reg clk_reg;
+          
+    //由MCU发出并且在级间寄存器中存储的控制信号
+    wire MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg;
+    wire [1:0] ALUOp,ID_EX_ALUOp;
+    wire ID_EX_MemRd,ID_EX_MemWr,ID_EX_Branch,ID_EX_Jump,ID_EX_RegDst,ID_EX_RegWr,ID_EX_MemtoReg;
+    wire EX_MA_MemRd,EX_MA_MemWr,EX_MA_Branch,EX_MA_Jump,EX_MA_RegDst,EX_MA_RegWr,EX_MA_MemtoReg;
+    wire MA_WB_RegDst,MA_WB_RegWr,MA_WB_MemtoReg;    
+    //由BCU和HCU发出的冒险控制信号
+    wire MemSrc;
+    wire PCWr,FI_ID_RegWr,Clear0,Clear1; 
+    wire [1:0] ALUSrc_A,ALUSrc_B; 
+    
+    wire PCSrc;
+    
+    wire [31:0] PC_MUX2_1_OUT,PC_MUX4_1_OUT,PC_OUT,instr;
+    
+    wire [31:0] FI_ID_NPC1,FI_ID_IR;
+    
+    wire [31:0] ID_EX_NPC1,ID_EX_Rs,ID_EX_Rt,Imm32,ID_EX_IR;
+    
+    wire [31:0] NPC2,NPC3,ALUOut,EX_MA_Rt,EX_MA_IR;
+    wire Flag;
+    
+    wire [31:0] MA_WB_ALUOut,MEMOut,MA_WB_IR;
+    
+    wire [31:0] MemtoReg_MUX_OUT,R_data1,R_data2,imm32;
+    wire [31:0] Add1_C,Add2_B,Add2_C;
+    wire [4:0] RegDst_MUX_OUT;
+    
+    wire [27:0] pinjie_low;
+    wire [31:0] pinjie;
+    
+    wire [31:0] ALU_A,ALU_B,ALU_C;
+    wire [2:0] ALUCtrl;
+    wire ALU_Z;
+    
+    wire [1:0] select;    
+    wire [31:0] DM_W_data,DM_R_data;
+    
+    wire [8:0] mcu_out,id_ex_cu_in;
+    wire [6:0] ex_ma_cu_in,id_ex_cu_out;
+    wire A0;
+    
+    assign mcu_out={ALUOp,MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg};
+    assign id_ex_cu_out={ID_EX_MemRd,ID_EX_MemWr,ID_EX_Branch,ID_EX_Jump,ID_EX_RegDst,ID_EX_RegWr,ID_EX_MemtoReg};
+    assign pinjie={ID_EX_NPC1[31:28],pinjie_low};
+    assign select={Flag && EX_MA_Branch,EX_MA_Jump};//PC是根据J型指令修改还是根据BEQ指令修改
+    assign PCSrc=(Flag && EX_MA_Branch) || EX_MA_Jump;//PC是顺序加一还是跳转
+        
+    MUX2_1 PC_MUX2_1(PCSrc,Add1_C,PC_MUX4_1_OUT,PC_MUX2_1_OUT);//PC是顺序加一还是跳转
+    MUX2_1 DM_MUX2_1(MemSrc,EX_MA_Rt,MemtoReg_MUX_OUT,DM_W_data);
+    MUX2_1 MemtoReg_MUX2_1(MA_WB_MemtoReg,MA_WB_ALUOut,MEMOut,MemtoReg_MUX_OUT);//这两个多路选择器都是为了解决lw，sw数据冒险而增加的       
+    MUX2_1 id_ex_clear(Clear0,mcu_out,0,id_ex_cu_in);    
+    MUX2_1 ex_ma_clear(Clear1,id_ex_cu_out,0,ex_ma_cu_in);   
+    MUX2_1 RegDst_MUX(MA_WB_RegDst,MA_WB_IR[20:16],MA_WB_IR[15:11],RegDst_MUX_OUT);
+    MUX4_1 ALU_A_MUX4_1(ALUSrc_A,ID_EX_Rs,ALUOut,MemtoReg_MUX_OUT,0,ALU_A);    
+    MUX4_1 ALU_B_MUX4_1(ALUSrc_B,ID_EX_Rt,ALUOut,MemtoReg_MUX_OUT,imm32,ALU_B);//ALU两个输入端的多路选择器，也增加了对数据冒险的处理，forwarding技术
+    MUX4_1 PC_MUX4_1(select,0,NPC3,NPC2,0,PC_MUX4_1_OUT);
+    
+    //级间寄存器
+    FI_ID fi_id(FI_ID_RegWr,predict_fail,clk_reg,Add1_C,instr,FI_ID_NPC1,FI_ID_IR);    
+    ID_EX id_ex(clk_reg,FI_ID_NPC1,R_data1,R_data2,Imm32,FI_ID_IR,ID_EX_NPC1,ID_EX_Rs,ID_EX_Rt,imm32,ID_EX_IR);    
+    ID_EX_CU id_ex_cu(clk_reg,id_ex_cu_in[8:7],id_ex_cu_in[6],id_ex_cu_in[5],id_ex_cu_in[4],id_ex_cu_in[3],id_ex_cu_in[2],id_ex_cu_in[1],id_ex_cu_in[0],ID_EX_ALUOp,ID_EX_MemRd,ID_EX_MemWr,ID_EX_Branch,ID_EX_Jump,ID_EX_RegDst,ID_EX_RegWr,ID_EX_MemtoReg);    
+    EX_MA ex_ma(clk_reg,pinjie,Add2_C,ALU_Z,ALU_C,ID_EX_Rt,ID_EX_IR,NPC3,NPC2,Flag,ALUOut,EX_MA_Rt,EX_MA_IR);    
+    EX_MA_CU ex_ma_cu(clk_reg,ex_ma_cu_in[6],ex_ma_cu_in[5],ex_ma_cu_in[4],ex_ma_cu_in[3],ex_ma_cu_in[2],ex_ma_cu_in[1],ex_ma_cu_in[0],EX_MA_MemRd,EX_MA_MemWr,EX_MA_Branch,EX_MA_Jump,EX_MA_RegDst,EX_MA_RegWr,EX_MA_MemtoReg);    
+    MA_WB ma_wb(clk_reg,ALUOut,DM_R_data,EX_MA_IR,MA_WB_ALUOut,MEMOut,MA_WB_IR);    
+    MA_WB_CU ma_wb_cu(clk_reg,EX_MA_RegDst,EX_MA_RegWr,EX_MA_MemtoReg,MA_WB_RegDst,MA_WB_RegWr,MA_WB_MemtoReg);
+    
+    PC pc(clk_reg,PCWr,PC_MUX2_1_OUT,PC_OUT);
+    ALUcontrol alucu(ID_EX_IR[5:0],ID_EX_ALUOp,ALUCtrl);
+    ALU alu(ALU_A,ALU_B,ALUCtrl,ALU_Z,ALU_C);
+    
+    IM im(PC_OUT,instr);
+    DM dm(clk_reg,ALUOut,DM_R_data,DM_W_data,EX_MA_MemWr,EX_MA_MemRd);
+    RF rf(clk_reg,FI_ID_IR[25:21],FI_ID_IR[20:16],RegDst_MUX_OUT,MemtoReg_MUX_OUT,R_data1,R_data2,MA_WB_RegWr);
+    
+    Adder Add1(4,PC_OUT,Add1_C);
+    Adder Add2(ID_EX_NPC1,Add2_B,Add2_C);
+    SigExt sigext(FI_ID_IR[15:0],Imm32);    
+    SHL2_1 shl1(imm32,Add2_B);    
+    SHL2_2 shl2(ID_EX_IR[25:0],pinjie_low);
+
+    //三个控制单元
+    MCU mcu(clk_reg,instr,ALUOp,MemRd,MemWr,Branch,Jump,RegDst,RegWr,MemtoReg);    
+    bypass_CU bcu(clk_reg,ID_EX_IR,EX_MA_IR,MA_WB_IR,EX_MA_RegWr,EX_MA_MemtoReg,EX_MA_MemWr,MA_WB_RegWr,ID_EX_MemWr,ALUSrc_A,ALUSrc_B,MemSrc,A0);
+    hazzard_detect_CU hcu(clk_reg,A0,ID_EX_MemRd,ID_EX_Jump,EX_MA_Branch,FI_ID_IR[25:21],FI_ID_IR[20:16],ID_EX_IR[20:16],Flag,PCWr,FI_ID_RegWr,Clear0,Clear1,predict_fail);  
+
+    integer m;
+    initial 
+        begin
+            for(m=0;m<100;m=m+1) 
+                begin
+                    clk_reg=0;
+                    #5; 
+                    clk_reg=1;
+                    #5;
+                end
+        end
+    
+    initial
+        begin
+            $dumpfile("pipelinedCPU.vcd");
+            $dumpvars(0,pipelinedCPU);
+        end
+endmodule
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
